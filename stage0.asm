@@ -75,7 +75,7 @@ _cont4:
    jns _cont5
    m_exit 1
 _cont5:
-   jmp r8
+   int 3
 exit:
    m_exit rax
 
